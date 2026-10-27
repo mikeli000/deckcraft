@@ -35,15 +35,20 @@ struct Entry {
     stamp: u64,
 }
 
+/// Slides whose drawn extent is remembered before the memory is dropped and relearned (a deck of
+/// thousands of slides doesn't keep a rectangle for each).
+const MAX_DRAWN: usize = 1024;
+
 #[derive(Default)]
 pub struct Textures {
     canvas: Option<Entry>,
     /// How far the canvas slide's shapes reach (from their boxes), for the slide and master `Arc`s
     /// held (kept alive so their addresses can't be reused).
     estimate: Option<(Arc<Slide>, Option<Arc<Master>>, Rect)>,
-    /// How far the last canvas render of a slide (by index) actually drew: text spilling out of
-    /// its box shows there.
-    drawn: Option<(usize, Rect)>,
+    /// How far the last canvas render of each slide (by index) actually drew: text spilling out of
+    /// its box shows there. Remembered for every slide visited, so coming back to one needs a single
+    /// render, not a second one to find out what the first missed.
+    drawn: HashMap<usize, Rect>,
     /// Canvas renders so far (tests, performance checks).
     pub canvas_renders: u64,
     thumbs: HashMap<usize, Entry>,
@@ -279,9 +284,9 @@ impl Textures {
                 r
             }
         };
-        let reach = match self.drawn {
-            Some((i, d)) if i == index => estimate.union(d),
-            _ => estimate,
+        let reach = match self.drawn.get(&index) {
+            Some(d) => estimate.union(*d),
+            None => estimate,
         };
         // The GPU's (or software fallback's) texture limit: a larger canvas texture panics in egui.
         let max_side = max_side(ctx);
@@ -330,7 +335,10 @@ impl Textures {
             img = render(region).0;
             self.canvas_renders += 1;
         }
-        self.drawn = Some((index, drawn));
+        if self.drawn.len() >= MAX_DRAWN {
+            self.drawn.clear();
+        }
+        self.drawn.insert(index, drawn);
         self.last_render_ms = crate::now_ms() - t0;
         let ci = to_color_image(&img, grayscale);
         let tex = match self.canvas.take() {
@@ -359,7 +367,7 @@ impl Textures {
     pub fn invalidate(&mut self) {
         self.canvas = None;
         self.estimate = None;
-        self.drawn = None;
+        self.drawn.clear();
         self.thumbs.clear();
     }
 
@@ -492,5 +500,60 @@ mod fit_tests {
         assert_eq!(small.pixels[1666], egui::Color32::BLUE);
         let ok = ColorImage::filled([10, 10], egui::Color32::WHITE);
         assert_eq!(shrink_to(ok.clone(), 2048).size, ok.size);
+    }
+}
+
+#[cfg(test)]
+mod drawn_tests {
+    use super::*;
+    use deckcraft_geom::Xfrm;
+    use deckcraft_model::text::TextBody;
+    use deckcraft_model::{Geom, Shape};
+
+    /// A deck whose slides each have a small fixed box near the bottom with far more text than
+    /// fits: the text spills out below the slide, past what the boxes say.
+    fn overflowing_deck(slides: usize) -> Presentation {
+        let mut p = deckcraft_model::defaults::new_presentation(None);
+        p.slides.clear();
+        for i in 0..slides {
+            let mut body = TextBody::from_text(&"overflowing words ".repeat(80));
+            body.body.wrap = Some(true);
+            body.body.autofit = None;
+            let shape = Shape {
+                id: ShapeId(100 + i as u32),
+                xfrm: Some(Xfrm::new(800.0, 480.0, 100.0, 20.0)),
+                text_box: true,
+                text: Some(body),
+                geom: Geom::preset("rect"),
+                ..Default::default()
+            };
+            p.slides.push(Arc::new(Slide { shapes: vec![shape], ..Default::default() }));
+        }
+        p
+    }
+
+    fn show(t: &mut Textures, ctx: &egui::Context, p: &Presentation, index: usize) {
+        let size = (960, 540);
+        let visible = Region { x: -300, y: -300, w: size.0 + 600, h: size.1 + 600 };
+        assert!(t.slide(ctx, p, index, size, visible, false, 0, false, &[], None, None).is_some());
+    }
+
+    /// Text that spills out of its box only shows once the slide has been drawn, so the first visit
+    /// renders twice. Returning to a slide must not: what it drew last time is remembered per slide,
+    /// not just for the slide shown most recently.
+    #[test]
+    fn a_slide_revisited_renders_once_because_its_drawn_extent_is_remembered() {
+        let ctx = egui::Context::default();
+        let p = overflowing_deck(2);
+        let mut t = Textures::default();
+
+        show(&mut t, &ctx, &p, 0);
+        assert_eq!(t.canvas_renders, 2, "the first visit draws, finds the overflow, and draws again");
+        show(&mut t, &ctx, &p, 1);
+        let before = t.canvas_renders;
+        show(&mut t, &ctx, &p, 0);
+        assert_eq!(t.canvas_renders - before, 1, "slide 0's overflow is already known, so one render covers it");
+        show(&mut t, &ctx, &p, 1);
+        assert_eq!(t.canvas_renders - before, 2, "and the same for slide 1");
     }
 }
