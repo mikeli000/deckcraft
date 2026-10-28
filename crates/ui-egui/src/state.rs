@@ -62,9 +62,13 @@ pub struct UiState {
     #[serde(skip)]
     pub thumbs_scroll: f32,
     /// Open task pane: `format`, `animation`, `selection`, `comments`, `designer`, `background`,
-    /// `smartart` (Text Pane).
+    /// `smartart` (Text Pane), `variables` (Seismic LiveDocs).
     pub pane: Option<String>,
     pub pane_width: f32,
+    /// Background tint (RGB; a fixed alpha keeps the text under it readable) drawn behind a
+    /// Seismic LiveDocs variable token while its shape is being edited. Not part of the
+    /// document — a local editing preference, like `brightness`.
+    pub livedoc_token_color: [u8; 3],
     pub ruler: bool,
     pub gridlines: bool,
     /// Slides per page previewed in Handout Master view (1, 2, 3, 4, 6 or 9).
@@ -106,6 +110,7 @@ impl Default for UiState {
             thumbs_scroll: 0.0,
             pane: None,
             pane_width: 300.0,
+            livedoc_token_color: [0xDB, 0xEA, 0xFE],
             ruler: false,
             gridlines: false,
             handout_per_page: 6,

@@ -24,6 +24,7 @@ mod masters;
 mod picture_format;
 mod playback;
 mod review;
+mod seismic;
 mod shape_format;
 mod slide_show;
 mod smartart;
@@ -50,6 +51,7 @@ use masters::{handout_master, notes_master, slide_master};
 use picture_format::picture_format;
 use playback::playback;
 use review::review;
+use seismic::seismic;
 use shape_format::shape_format;
 use slide_show::{record, slide_show};
 use smartart::smartart_design;
@@ -117,7 +119,7 @@ fn contextual(app: &SlideApp) -> Vec<&'static str> {
     v
 }
 
-const TABS: [&str; 10] = ["Home", "Insert", "Draw", "Design", "Transitions", "Animations", "Slide Show", "Record", "Review", "View"];
+const TABS: [&str; 11] = ["Home", "Insert", "Draw", "Design", "Transitions", "Animations", "Slide Show", "Record", "Review", "View", "Seismic"];
 
 /// Tab row and the ribbon card.
 pub fn show(app: &mut SlideApp, ui: &mut Ui) {
@@ -222,6 +224,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                         "Record" => record(app, ui),
                         "Review" => review(app, ui),
                         "View" => view(app, ui),
+                        "Seismic" => seismic(app, ui),
                         "Shape Format" => shape_format(app, ui),
                         "Picture Format" => picture_format(app, ui),
                         "Table Design" => table_design(app, ui),

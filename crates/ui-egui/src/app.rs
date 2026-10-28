@@ -85,6 +85,7 @@ impl SlideApp {
             ui_fonts: uifonts::UiFonts::default(),
             thumb_drag: None,
             selpane: selpane::State::default(),
+            livedoc: livedocpane::State::default(),
             align_to: None,
             doc_window: None,
             sorter: sorter::State::default(),
@@ -208,6 +209,7 @@ impl SlideApp {
         if !self.synthetic_batch_is_live(ctx) {
             self.drain_control(ctx);
             self.poll_opening();
+            self.poll_livedoc_upload();
             #[cfg(not(target_arch = "wasm32"))]
             updates_ui::tick(self, ctx);
             // Inbox results are host file bytes and do not need fonts or a painted frame. A

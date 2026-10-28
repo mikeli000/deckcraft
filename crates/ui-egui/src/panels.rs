@@ -49,6 +49,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 "smartart" => "Text Pane",
                 "thesaurus" => "Thesaurus",
                 "revisions" => "Revisions",
+                "variables" => "Variables",
                 _ => "Pane",
             };
             ui.horizontal(|ui| {
@@ -75,6 +76,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
                 "smartart" => smartart(app, ui),
                 "thesaurus" => thesaurus(app, ui),
                 "revisions" => revisions(app, ui),
+                "variables" => crate::livedocpane::show(app, ui),
                 _ => {}
             });
         });

@@ -567,3 +567,38 @@ fn animation_painter_sets_the_cursor() {
     let after = h.output().platform_output.cursor_icon;
     assert_eq!(after, egui::CursorIcon::Copy, "the animation painter arms the Copy cursor");
 }
+
+/// Typing `[[name` shows the "pick or create a variable" popup under the caret; clicking its
+/// "+ Create" entry confirms it the same way `text.insertVariable`/Enter would.
+#[test]
+fn typing_double_bracket_shows_a_compose_popup_and_create_confirms_it() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = harness();
+    let id = h.state().session.active().unwrap().doc.slides[0].shapes[0].id.0;
+    h.state_mut().run("text.edit", json!({"id": id})).unwrap();
+    h.state_mut().run("text.insert", json!({"text": "[[sdf"})).unwrap();
+    h.run_steps(3);
+    h.get_by_label("+ Create \"sdf\"").click();
+    h.run_steps(3);
+    let text = h.state().session.active().unwrap().shapes()[0].text.clone().unwrap();
+    let run = text.paragraphs[0].runs.last().unwrap();
+    assert_eq!(run.text, "[[AD_HOC:sdf]]");
+    assert!(matches!(run.kind, deckcraft_model::text::RunKind::Token { .. }), "{run:?}");
+}
+
+/// An existing variable is offered as a pick, not just "+ Create", and picking it reuses the
+/// existing name rather than treating the typed prefix as a brand-new one.
+#[test]
+fn an_existing_variable_matching_the_prefix_is_offered_to_pick() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = harness();
+    let id = h.state().session.active().unwrap().doc.slides[0].shapes[0].id.0;
+    h.state_mut().run("text.edit", json!({"id": id})).unwrap();
+    h.state_mut().run("text.insertVariable", json!({"name": "customer_name"})).unwrap();
+    h.state_mut().run("text.insert", json!({"text": " [[cust"})).unwrap();
+    h.run_steps(3);
+    h.get_by_label("customer_name").click();
+    h.run_steps(3);
+    let text = h.state().session.active().unwrap().shapes()[0].text.clone().unwrap();
+    assert_eq!(text.text(), "[[AD_HOC:customer_name]] [[AD_HOC:customer_name]]");
+}

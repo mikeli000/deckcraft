@@ -106,8 +106,14 @@ pub(super) fn overlays(app: &mut SlideApp, ui: &Ui, painter: &egui::Painter, xf:
     }
     // Caret / text selection, in a shape or a table cell.
     if let Some(ts) = &editing {
-        for quad in text_marks(st, ts).iter().flat_map(|m| &m.selection) {
-            painter.add(egui::Shape::convex_polygon(quad.iter().map(|q| xf.to_screen(*q)).collect(), t.text_selection, Stroke::NONE));
+        if let Some(marks) = text_marks(st, ts) {
+            let token_color = crate::livedocpane::highlight_color(app);
+            for quad in &marks.tokens {
+                painter.add(egui::Shape::convex_polygon(quad.iter().map(|q| xf.to_screen(*q)).collect(), token_color, Stroke::NONE));
+            }
+            for quad in &marks.selection {
+                painter.add(egui::Shape::convex_polygon(quad.iter().map(|q| xf.to_screen(*q)).collect(), t.text_selection, Stroke::NONE));
+            }
         }
         // An input method's composition: underlined in place, thicker under the part being converted.
         for (a, b, thick) in deckcraft_engine::cmd::text::composition_underlines(st) {
@@ -222,22 +228,30 @@ pub(super) fn overlays(app: &mut SlideApp, ui: &Ui, painter: &egui::Painter, xf:
     }
 }
 
-/// The text selection (quads) of the text being edited, in slide space: in a shape or a table
-/// cell, wherever its text is drawn. The caret is `cmd::text::caret_line`.
+/// The text selection and Seismic LiveDocs token (quads) of the text being edited, in slide
+/// space: in a shape or a table cell, wherever its text is drawn. The caret is
+/// `cmd::text::caret_line`.
 pub(crate) struct TextMarks {
     pub selection: Vec<[Point; 4]>,
+    /// Every `[[AD_HOC:name]]`-style variable's own rect(s) (see `livedocpane::highlight_color`
+    /// for how these are painted).
+    pub tokens: Vec<[Point; 4]>,
 }
 
 pub(crate) fn text_marks(st: &deckcraft_engine::DocState, ts: &deckcraft_engine::TextSel) -> Option<TextMarks> {
     let (l, m) = deckcraft_engine::cmd::text::text_frame(st, ts)?;
     let pos = |p: (usize, usize)| deckcraft_text::Pos { para: p.0, ch: p.1 };
+    let quad =
+        |r: deckcraft_geom::Rect| [Point::new(r.x0, r.y0), Point::new(r.x1, r.y0), Point::new(r.x1, r.y1), Point::new(r.x0, r.y1)].map(|q| m * q);
     let (s0, s1) = ts.ordered();
-    let selection = l
-        .selection_rects(pos(s0), pos(s1))
+    let selection = l.selection_rects(pos(s0), pos(s1)).into_iter().map(quad).collect();
+    let tokens = deckcraft_engine::cmd::text::body_of(st, ts)
         .into_iter()
-        .map(|r| [Point::new(r.x0, r.y0), Point::new(r.x1, r.y0), Point::new(r.x1, r.y1), Point::new(r.x0, r.y1)].map(|q| m * q))
+        .flat_map(deckcraft_livedoc::token_ranges)
+        .flat_map(|(para, start, end)| l.selection_rects(pos((para, start)), pos((para, end))))
+        .map(quad)
         .collect();
-    Some(TextMarks { selection })
+    Some(TextMarks { selection, tokens })
 }
 
 fn rotate_handle(p: &egui::Painter, c: Pos2, t: &Tokens) {

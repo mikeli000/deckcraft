@@ -41,3 +41,44 @@ pub(super) fn ime_output(app: &mut SlideApp, ui: &Ui, xf: Xf) {
     let to_global = ctx.layer_transform_to_global(ui.layer_id()).unwrap_or_default();
     app.ime_pending = Some(to_global * r);
 }
+
+/// Seismic LiveDocs "pick or create a variable" popup: shown right under the caret while typing
+/// `[[name` (`deckcraft_engine::cmd::text::livedoc_composing`), listing existing variables whose
+/// name starts with what's typed so far plus a "+ Create" entry, same gesture Enter also confirms
+/// (`Session::key`'s own check) — a click here does the same select-then-`text.insertVariable`
+/// as that key handler.
+pub(super) fn livedoc_compose_popup(app: &mut SlideApp, ui: &Ui, xf: Xf) {
+    let Some(st) = app.session.active() else { return };
+    let Some(ts) = st.selection.text.clone() else { return };
+    let Some((start, partial)) = deckcraft_engine::cmd::text::livedoc_composing(st, &ts) else { return };
+    let Some((top, _)) = deckcraft_engine::cmd::text::caret_line(st, &ts) else { return };
+    let needle = partial.to_lowercase();
+    let matches: Vec<String> =
+        deckcraft_livedoc::list_variables(&st.doc).into_iter().filter(|n| needle.is_empty() || n.to_lowercase().starts_with(&needle)).collect();
+    let exact = matches.iter().any(|n| n.eq_ignore_ascii_case(&partial));
+    let create = (!partial.trim().is_empty() && !exact).then(|| partial.clone());
+    if matches.is_empty() && create.is_none() {
+        return;
+    }
+    let anchor = xf.to_screen(top);
+    let mut confirm = None;
+    egui::Area::new(ui.scope_id().with("livedoc_compose")).fixed_pos(anchor + vec2(0.0, 6.0)).order(egui::Order::Foreground).show(ui.ctx(), |ui| {
+        egui::Frame::popup(ui.style()).show(ui, |ui| {
+            ui.set_max_width(220.0);
+            for name in &matches {
+                if ui.button(name).clicked() {
+                    confirm = Some(name.clone());
+                }
+            }
+            if let Some(name) = &create
+                && ui.button(format!("+ Create \"{name}\"")).clicked()
+            {
+                confirm = Some(name.clone());
+            }
+        });
+    });
+    if let Some(name) = confirm {
+        let _ = app.run("text.select", json!({"anchor": [start.0, start.1], "caret": [ts.caret.0, ts.caret.1]}));
+        let _ = app.run("text.insertVariable", json!({"name": name}));
+    }
+}

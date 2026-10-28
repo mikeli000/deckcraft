@@ -27,7 +27,7 @@ mod scroll;
 use context_menu::context_menu;
 use guides::{draw_grid, draw_guides, grid_line_step};
 pub use ime::ime_area;
-use ime::ime_output;
+use ime::{ime_output, livedoc_compose_popup};
 #[cfg(test)]
 use input::resize_cursor;
 pub(crate) use input::{page_flick, trackpad_twist};
@@ -310,6 +310,7 @@ pub fn show(app: &mut SlideApp, ui: &mut Ui) {
     if !app.anim_preview_active() {
         overlays(app, ui, &painter, xf, &t);
         ime_output(app, ui, xf);
+        livedoc_compose_popup(app, ui, xf);
         media_bar(app, ui, xf);
         gif_buttons(app, ui, xf, &gifs);
         if resp.secondary_clicked()
