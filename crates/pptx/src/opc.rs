@@ -35,6 +35,8 @@ pub const RT_MEDIA: &str = "http://schemas.microsoft.com/office/2007/relationshi
 /// A 3-D model part (`.glb`). Office relationship, not an ECMA-376 base type.
 pub const RT_MODEL3D: &str = "http://schemas.microsoft.com/office/2017/06/relationships/model3d";
 pub const RT_CORE: &str = "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties";
+/// A custom-XML part (a `KeptPart` a higher layer added, e.g. a third-party add-in's own data).
+pub const RT_CUSTOM_XML: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml";
 
 /// The files of a package, keyed by normalised part name (no leading slash, lowercase).
 pub struct Package {

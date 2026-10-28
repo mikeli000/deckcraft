@@ -157,7 +157,7 @@ fn cnvpr(w: &mut W, x: &mut Exp, o: &mut Out, id: u32, s: &Shape) {
 }
 
 fn nv_pr(w: &mut W, x: &mut Exp, o: &mut Out, s: &Shape) {
-    if s.ph.is_none() && s.tags.is_empty() {
+    if s.ph.is_none() && s.tags.is_empty() && s.custom_xml_ref.is_none() {
         w.empty0("p:nvPr");
         return;
     }
@@ -178,8 +178,26 @@ fn nv_pr(w: &mut W, x: &mut Exp, o: &mut Out, s: &Shape) {
                 .t("hasCustomPrompt", ph.has_custom_prompt),
         );
     }
-    super::cust_data(w, x, o, &s.tags);
+    shape_cust_data(w, x, o, s);
     w.close("p:nvPr");
+}
+
+/// `p:custDataLst` for a shape: its add-in tags and/or a binding to an existing document-level
+/// part (e.g. a `KeptPart` a higher layer added), as a `p:custData` relationship.
+fn shape_cust_data(w: &mut W, x: &mut Exp, o: &mut Out, s: &Shape) {
+    if s.tags.is_empty() && s.custom_xml_ref.is_none() {
+        return;
+    }
+    w.open0("p:custDataLst");
+    if !s.tags.is_empty() {
+        let id = x.tags_rel(o, &s.tags);
+        w.empty("p:tags", A::new().a("r:id", id));
+    }
+    if let Some(part) = &s.custom_xml_ref {
+        let id = o.rels.add("customXml", &crate::opc::relative(&o.name, part), false);
+        w.empty("p:custData", A::new().a("r:id", id));
+    }
+    w.close("p:custDataLst");
 }
 
 /// Locking attributes. Lock writes the full set PowerPoint writes for the element's kind (and

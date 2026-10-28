@@ -361,6 +361,11 @@ pub struct Shape {
     /// On a SmartArt group: the diagram's text outline, from which its shapes are regenerated.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diagram: Option<Diagram>,
+    /// A document-level part this shape points at (`p:custDataLst` → `p:custData` → a package
+    /// relationship to this part name, e.g. a `KeptPart` added by a higher layer such as a
+    /// third-party add-in). Opaque to this layer: the writer only relates and references it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_xml_ref: Option<String>,
 }
 
 /// A SmartArt diagram's data: its layout and its outline of nodes (the Text Pane).
@@ -436,6 +441,7 @@ impl Default for Shape {
             tags: vec![],
             raw_ext: None,
             diagram: None,
+            custom_xml_ref: None,
         }
     }
 }

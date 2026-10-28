@@ -9,6 +9,8 @@ plan/
 /.claude/
 /craft-fonts/
 packaging/env.sh
+# Seismic LiveDocs "Upload Live" credentials (deckcraft_livedoc::upload) — see .env.example.
+/.env
 /packaging/linux/flatpak/cargo-sources.json
 /build-flatpak/
 /.flatpak-builder/

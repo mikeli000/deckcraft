@@ -167,6 +167,7 @@ fn base(imp: &mut Imp, part: &Part, ctx: &mut IdCtx, nv: Option<&El>) -> Shape {
                         });
                     }
                     s.tags = super::tags(imp, part, e);
+                    s.custom_xml_ref = super::custom_xml_ref(part, e);
                 }
                 _ => {}
             }

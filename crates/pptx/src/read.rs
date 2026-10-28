@@ -211,9 +211,17 @@ pub fn tags(imp: &Imp, part: &Part, holder: &El) -> Vec<(String, String)> {
     out
 }
 
+/// `holder`'s `p:custDataLst` → `p:custData` binding to a document-level part, if any (e.g. a
+/// third-party add-in's per-shape reference into a `KeptPart` it owns).
+pub fn custom_xml_ref(part: &Part, holder: &El) -> Option<String> {
+    let list = holder.child("custDataLst")?;
+    let id = list.child("custData")?.attr("r:id")?;
+    part.rels.get(id).map(|r| r.target.clone())
+}
+
 /// Relationship types whose parts are kept verbatim, and whether they hang off the package root.
 const KEPT_RELS: [(&str, bool); 3] = [
-    ("http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml", false),
+    (crate::opc::RT_CUSTOM_XML, false),
     ("http://schemas.microsoft.com/office/2020/02/relationships/classificationlabels", true),
     ("http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties", true),
 ];

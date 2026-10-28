@@ -13,7 +13,7 @@ use deckcraft_geom::Xfrm;
 use deckcraft_model::text::{ListStyle, Paragraph, TextBody};
 use deckcraft_model::theme::Theme;
 use deckcraft_model::{
-    Background, Comment, Layout, LayoutId, Master, MediaId, PhType, Placeholder, Presentation, Shape, ShapeId, Slide, SlideId, defaults,
+    Background, Comment, Layout, LayoutId, Master, MediaId, PhType, Placeholder, Presentation, Shape, ShapeId, Slide, SlideId, defaults, walk,
 };
 
 use crate::PptxError;
@@ -708,9 +708,9 @@ pub fn export(p: &Presentation, main_ct: &str) -> Result<Vec<u8>, PptxError> {
     x.pkg.xml_part("ppt/viewProps.xml", CT_VIEW_PROPS, view_props_xml(p));
     let ts = crate::tables::table_styles_xml(&x.table_styles, &p.table_styles);
     x.pkg.xml_part("ppt/tableStyles.xml", CT_TABLE_STYLES, ts);
-    let pxml = presentation_xml(&mut x, &mut pres, &master_rids, notes_master_rid.as_deref(), handout_rid.as_deref(), &slide_rids);
-    x.pkg.xml_part("ppt/presentation.xml", main_ct, pxml);
-    // Kept parts never replace a part the writer makes.
+    // Kept parts never replace a part the writer makes. Registered (and, for the document-level
+    // customXml ones, gathered for the presentation's own `p:custDataLst` below) before
+    // `presentation_xml` runs, since that's the one part whose body needs these relationship ids.
     let kept: Vec<_> = p
         .kept_parts
         .iter()
@@ -725,9 +725,17 @@ pub fn export(p: &Presentation, main_ct: &str) -> Result<Vec<u8>, PptxError> {
                 && n != "_rels/.rels"
         })
         .collect();
+    let shape_bound = shape_bound_part_names(p);
+    let mut doc_cust_data_rids = Vec::new();
     for k in kept.iter().filter(|k| !k.rel_type.is_empty() && !k.from_root) {
-        pres.rels.add_new(&k.rel_type, &opc::relative("ppt/presentation.xml", &k.name), false);
+        let rid = pres.rels.add_new(&k.rel_type, &opc::relative("ppt/presentation.xml", &k.name), false);
+        if k.rel_type == opc::RT_CUSTOM_XML && !shape_bound.contains(&k.name) {
+            doc_cust_data_rids.push(rid);
+        }
     }
+    let pxml =
+        presentation_xml(&mut x, &mut pres, &master_rids, notes_master_rid.as_deref(), handout_rid.as_deref(), &slide_rids, &doc_cust_data_rids);
+    x.pkg.xml_part("ppt/presentation.xml", main_ct, pxml);
     x.pkg.rels("ppt/presentation.xml", &pres.rels);
     for k in &kept {
         if k.content_type.is_empty() {
@@ -749,6 +757,35 @@ pub fn export(p: &Presentation, main_ct: &str) -> Result<Vec<u8>, PptxError> {
     }
     x.pkg.rels("", &root);
     x.pkg.finish()
+}
+
+/// Every `KeptPart` name a shape's `custom_xml_ref` (`p:custData` on the shape itself) points at,
+/// anywhere in the presentation — the presentation's own `p:custDataLst` lists document-level
+/// kept parts, but excludes any part a shape already carries its own binding to (a real sample
+/// does the same: its per-shape `Strauss.PersonalizationDefinition` item isn't repeated in
+/// `presentation.xml`'s own `custDataLst`, only in the owning shape's).
+fn shape_bound_part_names(p: &Presentation) -> std::collections::HashSet<String> {
+    let mut names = std::collections::HashSet::new();
+    let mut collect = |shapes: &[Shape]| {
+        walk(shapes, &mut |shape, _| {
+            if let Some(r) = &shape.custom_xml_ref {
+                names.insert(r.clone());
+            }
+        });
+    };
+    for s in &p.slides {
+        collect(&s.shapes);
+    }
+    for m in &p.masters {
+        collect(&m.shapes);
+        for l in &m.layouts {
+            collect(&l.shapes);
+        }
+    }
+    for extra in [p.notes_master.as_deref(), p.handout_master.as_deref()].into_iter().flatten() {
+        collect(&extra.shapes);
+    }
+    names
 }
 
 fn layout_xml(x: &mut Exp, o: &mut Out, l: &Layout) -> Vec<u8> {
@@ -1060,7 +1097,15 @@ fn write_embedded_fonts(x: &mut Exp, o: &mut Out) -> Vec<WrittenFont> {
     out
 }
 
-fn presentation_xml(x: &mut Exp, o: &mut Out, masters: &[(u64, String)], notes: Option<&str>, handout: Option<&str>, slides: &[String]) -> Vec<u8> {
+fn presentation_xml(
+    x: &mut Exp,
+    o: &mut Out,
+    masters: &[(u64, String)],
+    notes: Option<&str>,
+    handout: Option<&str>,
+    slides: &[String],
+    doc_cust_data_rids: &[String],
+) -> Vec<u8> {
     let fonts = write_embedded_fonts(x, o);
     let p = x.p;
     let mut w = W::new();
@@ -1124,7 +1169,22 @@ fn presentation_xml(x: &mut Exp, o: &mut Out, masters: &[(u64, String)], notes: 
         }
         w.close("p:custShowLst");
     }
-    cust_data(&mut w, x, o, &p.tags);
+    // `p:custDataLst`: this document's own tags, plus a `p:custData` entry for every document-
+    // level customXml `KeptPart` not already bound to a shape (see `shape_bound_part_names`) — a
+    // real LiveDocs-authored sample lists every one of its own document-level customXml items
+    // here, not just in `presentation.xml.rels`; omitting it is why a real tenant's FormService
+    // can't find a template's identity metadata even though the part and relationship both exist.
+    if !p.tags.is_empty() || !doc_cust_data_rids.is_empty() {
+        w.open0("p:custDataLst");
+        if !p.tags.is_empty() {
+            let id = x.tags_rel(o, &p.tags);
+            w.empty("p:tags", A::new().a("r:id", id));
+        }
+        for rid in doc_cust_data_rids {
+            w.empty("p:custData", A::new().a("r:id", rid));
+        }
+        w.close("p:custDataLst");
+    }
     let dts = if p.default_text_style.is_empty() { defaults::default_text_style() } else { p.default_text_style.clone() };
     dml::list_style(&mut w, x, o, "p:defaultTextStyle", &dts);
     let sections = section_slides(p);
@@ -1273,6 +1333,11 @@ fn app_xml(p: &Presentation) -> Vec<u8> {
     if !p.props.company.is_empty() {
         w.elt("Company", &p.props.company);
     }
+    // Without this, some strict external consumers reject the file outright — confirmed against
+    // Seismic's FormService (`deckcraft_livedoc::upload`), which rejected every export with
+    // "Missing metadata xml in template source:Presentation" until this was added, regardless of
+    // the document's own content; "16.0000" is the literal value real PowerPoint itself writes.
+    w.elt("AppVersion", "16.0000");
     w.close("Properties");
     w.finish()
 }

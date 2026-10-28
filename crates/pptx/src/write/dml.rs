@@ -755,7 +755,10 @@ pub fn paragraph(w: &mut W, x: &mut Exp, o: &mut Out, p: &Paragraph, math: bool,
     }
     for (ri, r) in p.runs.iter().enumerate() {
         match &r.kind {
-            RunKind::Text => run_text(w, x, o, &r.text, &r.props),
+            // Same OOXML shape as `Text` — `Token`'s atomicity is an editing-only distinction
+            // (see `RunKind::Token`'s doc comment); a plain `[[AD_HOC:name]]`-style literal is
+            // exactly what a real LiveDocs-authored file itself writes for its own tokens.
+            RunKind::Text | RunKind::Token { .. } => run_text(w, x, o, &r.text, &r.props),
             RunKind::Break => {
                 w.open0("a:br");
                 rpr(w, x, o, "a:rPr", &r.props);

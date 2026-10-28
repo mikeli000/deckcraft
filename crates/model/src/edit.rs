@@ -251,6 +251,9 @@ pub fn slice(body: &TextBody, a: Pos, b: Pos) -> TextBody {
 
 /// Insert a formatted body at `pos` (paste): first paragraph merges into the current one.
 pub fn insert_body(body: &mut TextBody, pos: Pos, src: &TextBody) -> Pos {
+    if body.paragraphs.is_empty() {
+        body.paragraphs.push(Paragraph::default());
+    }
     let mut caret = clamp(body, pos);
     for (k, sp) in src.paragraphs.iter().enumerate() {
         if k > 0 {
@@ -542,6 +545,23 @@ mod tests {
         let caret = insert_body(&mut c, (0, 1), &s);
         assert_eq!(c.text(), "XbcdeY");
         assert_eq!(caret, (0, 5));
+    }
+
+    /// A body with no paragraphs at all (an untouched placeholder, e.g. a title shape nobody has
+    /// typed into yet) gets one created, same as `insert` already does — `insert_body` didn't
+    /// (the function `text.insertVariable`/`insert_field` go through), so inserting a non-`Text`,
+    /// non-`Break` run (a field or an atomic token, the `_` match arm below) into one silently
+    /// did nothing: `body.paragraphs.get_mut(caret.0)` found no paragraph 0 to insert into.
+    #[test]
+    fn insert_body_creates_a_paragraph_in_a_completely_empty_body() {
+        let mut empty = TextBody::default();
+        assert!(empty.paragraphs.is_empty());
+        let token = Run { text: "[[AD_HOC:x]]".into(), kind: RunKind::Token { data: "x".into() }, ..Run::new("") };
+        let src = TextBody { paragraphs: vec![Paragraph { runs: vec![token], ..Default::default() }], ..Default::default() };
+        let caret = insert_body(&mut empty, (0, 0), &src);
+        assert_eq!(empty.paragraphs.len(), 1, "a paragraph was created to insert into");
+        assert_eq!(empty.paragraphs[0].runs.len(), 1);
+        assert_eq!(caret, (0, 12));
     }
 
     #[test]

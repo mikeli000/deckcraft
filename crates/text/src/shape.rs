@@ -46,7 +46,7 @@ pub(crate) fn shape_para(
             RunKind::Text => run.text.clone(),
             RunKind::Break => "\u{b}".into(),
             RunKind::Field { field } => opts.fields.field_in(field, rp.lang.as_deref()).unwrap_or_else(|| run.text.clone()),
-            RunKind::Math { .. } => run.text.clone(),
+            RunKind::Math { .. } | RunKind::Token { .. } => run.text.clone(),
         };
         let si = styles.len();
         styles.push(st);

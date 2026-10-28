@@ -460,6 +460,16 @@ pub enum RunKind {
     Math {
         omml: String,
     },
+    /// An atomic token a plugin (not this crate) owns the meaning of — e.g. a Seismic LiveDocs
+    /// variable. `text` is the literal display text (what plain PowerPoint/DeckCraft shows and
+    /// exports, e.g. `"[[AD_HOC:my_name]]"`); `data` is an opaque, plugin-defined payload (this
+    /// crate never parses it) carrying whatever structured meaning the plugin needs, e.g.
+    /// `{"kind":"variable","name":"my_name"}`. Writes to `ppt/slideN.xml` exactly like `Text`
+    /// (plain `<a:r><a:t>`) — the only difference from `Text` is editing atomicity (this whole
+    /// run is one unit: the cursor can't land inside it, same as `Field`/`Math`).
+    Token {
+        data: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
