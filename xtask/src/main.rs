@@ -33,6 +33,9 @@ commands:
   parity          recompute the PowerPoint feature-parity summary in docs/parity-checklist.md
   ico <out.ico> <in.png>...
                   pack square PNGs (<= 256 px) into a Windows .ico (see packaging/icons.sh)
+  serve-web       run deckcraft-server (Seismic LiveDocs \"Upload Live\" proxy) alongside
+                  `trunk serve` for apps/deckcraft-web, one command instead of two terminals —
+                  stopping either one (Ctrl+C, a crash) stops both
 ";
 
 fn main() -> ExitCode {
@@ -50,6 +53,7 @@ fn main() -> ExitCode {
         Some("bench") => bench::run(&root(), &rest),
         Some("ico") => ico::run(&rest),
         Some("version") => version::run(&root(), &rest),
+        Some("serve-web") => cmd_serve_web(),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
             Ok(())
@@ -184,6 +188,27 @@ fn cmd_doctest() -> Result<(), String> {
     let mut c = cargo();
     c.args(["test", "--workspace", "--doc"]);
     run(c, "cargo test --workspace --doc")
+}
+
+/// Starts `deckcraft-server` (the Seismic LiveDocs "Upload Live" proxy `apps/deckcraft-web/
+/// Trunk.toml`'s `[[proxy]]` forwards to) in the background, then runs `trunk serve` in the
+/// foreground — one command, so the proxy is never left not-running after a restart while `trunk
+/// serve` itself is still up (the exact gap that made "Upload Live" fail with a plain connection-
+/// refused error, repeatedly, across separate sessions). Stops `deckcraft-server` once `trunk
+/// serve` exits, by any means (a clean exit, Ctrl+C, a crash) — never leaves it dangling.
+fn cmd_serve_web() -> Result<(), String> {
+    let mut server_cmd = cargo();
+    server_cmd.args(["run", "-p", "deckcraft-server"]);
+    eprintln!("$ cargo run -p deckcraft-server (background)");
+    let mut server = server_cmd.spawn().map_err(|e| format!("failed to start deckcraft-server: {e}"))?;
+
+    let mut trunk_cmd = Command::new("trunk");
+    trunk_cmd.args(["serve"]).current_dir(root().join("apps/deckcraft-web"));
+    let result = run(trunk_cmd, "trunk serve");
+
+    let _ = server.kill();
+    let _ = server.wait();
+    result
 }
 
 fn cmd_ci() -> Result<(), String> {

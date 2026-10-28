@@ -1,0 +1,20 @@
+[package]
+name = "deckcraft-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Stateless proxy for Seismic LiveDocs \"Upload Live\": holds SEISMIC_* credentials so deckcraft-web's browser build never sees them"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+deckcraft-pptx = { workspace = true }
+deckcraft-livedoc = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tower-http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+dotenvy = { workspace = true }

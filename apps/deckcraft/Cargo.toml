@@ -30,6 +30,7 @@ rfd = { workspace = true }
 arboard = { workspace = true, features = ["image-data"] }
 image = { workspace = true }
 cpal = "0.16"
+dotenvy = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Finder double-click, Open With, Dock drops and `open -a DeckCraft deck.pptx` arrive as a

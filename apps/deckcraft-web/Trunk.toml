@@ -8,3 +8,10 @@ filehash = true
 [serve]
 addresses = ["127.0.0.1"]
 port = 8768
+
+# Seismic LiveDocs "Upload Live": run `cargo run -p deckcraft-server` alongside `trunk serve` and
+# requests to this path forward there, so the browser's own request stays same-origin (no CORS
+# round trip for local dev). See apps/deckcraft-server/src/main.rs.
+[[proxy]]
+rewrite = "/livedoc/upload"
+backend = "http://127.0.0.1:4100/livedoc/upload"

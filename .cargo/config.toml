@@ -5,3 +5,10 @@ CRAFT_FONTS_DIR = { value = "../craft-fonts", relative = true }
 
 [alias]
 xtask = "run --package xtask --"
+
+# The browser build rasterizes slides on the CPU (vello_cpu) on the page's one thread. Without
+# simd128 that code takes its scalar path: about twice as slow switching slides in a measured
+# 10-slide deck. WebAssembly SIMD is in every current browser (Chrome 91, Firefox 89, Safari 16.4).
+# A RUSTFLAGS environment variable replaces this, so set simd128 there too when you use one.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]

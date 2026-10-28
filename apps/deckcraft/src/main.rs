@@ -184,6 +184,11 @@ fn app_icon() -> Option<egui::IconData> {
 /// Install logging, parse startup arguments and environment, launch the native app, and
 /// propagate an eframe startup failure.
 fn main() -> eframe::Result {
+    // Seismic LiveDocs "Upload Live" (`deckcraft_livedoc::upload`) credentials, if a `.env` is
+    // present (gitignored; `.env.example` documents the variables) — never required, every other
+    // feature works without one. Silently does nothing when there's no file.
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = dotenvy::dotenv();
     // First, so every start-up record (and the engine's panic hook, installed with the first
     // Session) is captured; see `logging`.
     let logger = logging::install();
