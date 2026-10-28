@@ -28,7 +28,7 @@ pub use autocorrect::{AUTOCORRECT, AutoList, correct_word};
 use caret::count_param;
 pub(crate) use caret::{apply_leading_tabs, delete_dir};
 use caret::{delete, delete_surrounding, get, insert, move_caret, select, select_all, select_para, select_word, set};
-use editing::{edit, exit};
+use editing::{edit, exit, insert_variable, list_variables};
 pub(crate) use editing::{insert_field, insert_text, paste_body};
 pub use formatting::format_range;
 use formatting::{fonts_used, replace_font};
@@ -133,7 +133,27 @@ pub fn specs() -> Vec<CommandSpec> {
             set
         ),
         cmd!(query "text.get", "Get Text", [], None, "{id?} → {text, paragraphs}", has_slide, get),
+        cmd!(
+            "text.insertVariable",
+            "Insert Variable",
+            [],
+            None,
+            "{name} — a Seismic LiveDocs AD_HOC variable, as an atomic token replacing the selection",
+            has_text,
+            insert_variable
+        ),
+        cmd!(query "text.listVariables", "Variables in Document", [], None, "{} → {names: [name]} — every distinct LiveDocs variable in the presentation", has_doc, list_variables),
     ]
+}
+
+/// A Seismic LiveDocs variable being typed at `t`'s caret (`[[name`, not yet confirmed) — see
+/// `deckcraft_livedoc::detect_composition`'s own doc comment for exactly when this is `Some`.
+/// `None` for a range selection: composing only makes sense at a plain caret.
+pub fn livedoc_composing(st: &DocState, t: &TextSel) -> Option<((usize, usize), String)> {
+    if t.is_range() {
+        return None;
+    }
+    deckcraft_livedoc::composing_at(body_of(st, t)?, t.caret)
 }
 
 /// The text body a text selection edits.

@@ -43,6 +43,7 @@ pub fn instance_id() -> u64 {
     static ID: OnceLock<u64> = OnceLock::new();
     *ID.get_or_init(|| {
         use std::hash::{BuildHasher, Hasher};
+        #[allow(unused_mut)] // mutated below on non-wasm targets only; wasm has no pid or clock.
         let mut h = std::collections::hash_map::RandomState::new().build_hasher();
         // No PIDs and no std::time on wasm (`std::process::id()` and
         // `SystemTime::now()` panic there): the browser clock stands in.

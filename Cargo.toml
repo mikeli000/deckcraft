@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*", "xtask"]
-default-members = ["crates/*", "apps/deckcraft", "apps/deckcraft-cli"]
+default-members = ["crates/*", "apps/deckcraft", "apps/deckcraft-cli", "apps/deckcraft-server"]
 
 [workspace.package]
 version = "0.11.1"
@@ -23,6 +23,7 @@ deckcraft-pdf = { path = "crates/pdf" }
 deckcraft-pptx = { path = "crates/pptx" }
 deckcraft-format = { path = "crates/format" }
 deckcraft-anim = { path = "crates/anim" }
+deckcraft-livedoc = { path = "crates/livedoc" }
 deckcraft-engine = { path = "crates/engine" }
 deckcraft-mcp = { path = "crates/mcp" }
 deckcraft-ui-egui = { path = "crates/ui-egui" }
@@ -42,6 +43,18 @@ deckcraft-opus = { path = "crates/opus" }
 kurbo = { version = "0.13", features = ["serde"] }
 thiserror = "2"
 serde = { version = "1", features = ["derive", "rc"] }
+# Pure-Rust TLS (rustls, not the system OpenSSL/Schannel bindings `native-tls` would pull in) —
+# only `deckcraft-livedoc`'s "Upload Live" needs this; a desktop-only, blocking HTTP client,
+# never used from `deckcraft-web` (wasm has no std::thread, see that crate's own doc comment).
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+# Loads .env (desktop app only, never wasm) so Upload Live's SEISMIC_* credentials don't need to
+# be exported by hand every session — matches monear's own doc-server convention.
+dotenvy = "0.15"
+# apps/deckcraft-server: the stateless proxy holding Upload Live's credentials so
+# deckcraft-web's browser build never sees them.
+axum = "0.7"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+tower-http = { version = "0.5", features = ["cors"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 log = "0.4"
 proptest = "1"

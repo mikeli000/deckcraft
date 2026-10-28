@@ -4987,6 +4987,97 @@ fn table_insert_below_or_right_of_a_huge_index_appends_at_the_end() {
 }
 
 #[test]
+fn insert_variable_adds_an_atomic_token_and_lists_it() {
+    use deckcraft_model::text::RunKind;
+    let mut s = session();
+    let title = s.doc().unwrap().current_slide().unwrap().shapes[0].id.0;
+    s.execute("text.edit", &json!({"id": title})).unwrap();
+    s.execute("text.insert", &json!({"text": "Hello "})).unwrap();
+    let before = s.doc().unwrap().history.undo.len();
+    s.execute("text.insertVariable", &json!({"name": "my_name"})).unwrap();
+    let run = s.doc().unwrap().current_slide().unwrap().shapes[0].text.as_ref().unwrap().paragraphs[0].runs.last().cloned().unwrap();
+    assert_eq!(run.text, "[[AD_HOC:my_name]]");
+    assert!(matches!(&run.kind, RunKind::Token { data } if data.contains("my_name")), "{run:?}");
+    assert_eq!(s.doc().unwrap().history.undo.len(), before + 1, "one undo step");
+    assert_eq!(s.execute("text.listVariables", &json!({})).unwrap(), json!({"names": ["my_name"]}));
+    // One undo removes the token and the name it contributed.
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.execute("text.listVariables", &json!({})).unwrap(), json!({"names": []}));
+}
+
+#[test]
+fn insert_variable_rejects_an_empty_or_unsafe_name() {
+    let mut s = session();
+    let title = s.doc().unwrap().current_slide().unwrap().shapes[0].id.0;
+    s.execute("text.edit", &json!({"id": title, "end": true})).unwrap();
+    assert!(s.execute("text.insertVariable", &json!({"name": ""})).is_err());
+    assert!(s.execute("text.insertVariable", &json!({"name": "  "})).is_err());
+    assert!(s.execute("text.insertVariable", &json!({"name": "has]bracket"})).is_err(), "would break the [[AD_HOC:name]] display form");
+    assert!(s.execute("text.insertVariable", &json!({})).is_err(), "missing name");
+}
+
+/// A real LiveDocs-authored `[[AD_HOC:name]]` run, found anywhere while importing a `.pptx`
+/// (the shape it set up is free to represent "any shape with text", table cells aside — see
+/// `deckcraft_livedoc`'s own doc comment for that limitation), comes back as the same atomic
+/// token on re-import: round-tripping through DeckCraft doesn't let an edit split it apart, and
+/// doesn't silently turn it into inert plain text either.
+#[test]
+fn opening_a_pptx_with_a_real_livedoc_token_recognizes_it_as_a_variable() {
+    use deckcraft_model::text::RunKind;
+    let mut s = session();
+    let title = s.doc().unwrap().current_slide().unwrap().shapes[0].id.0;
+    s.execute("text.edit", &json!({"id": title})).unwrap();
+    s.execute("text.insert", &json!({"text": "Hello "})).unwrap();
+    s.execute("text.insertVariable", &json!({"name": "round_trips"})).unwrap();
+    s.execute("text.exit", &json!({})).unwrap();
+    let bytes = deckcraft_pptx::export(&s.doc().unwrap().doc).unwrap();
+
+    let mut s2 = Session::new();
+    let p = crate::cmd::file::open_presentation("roundtrip.pptx", &bytes).unwrap();
+    s2.add_document(DocState::new(p, None, "roundtrip".to_string()));
+    let run = s2.doc().unwrap().current_slide().unwrap().shapes[0].text.as_ref().unwrap().paragraphs[0].runs.last().cloned().unwrap();
+    assert_eq!(run.text, "[[AD_HOC:round_trips]]");
+    assert!(matches!(run.kind, RunKind::Token { .. }), "{run:?}");
+}
+
+/// Typing `[[name` then pressing Enter confirms it as a variable (same result as
+/// `text.insertVariable`), instead of starting a new paragraph — the keyboard half of the
+/// "pick or create a variable" gesture the Variables pane's own popup click confirms.
+#[test]
+fn enter_confirms_a_variable_being_typed_instead_of_a_new_paragraph() {
+    use crate::tools::Mods;
+    use deckcraft_model::text::RunKind;
+    let mut s = session();
+    let title = s.doc().unwrap().current_slide().unwrap().shapes[0].id.0;
+    s.execute("text.edit", &json!({"id": title})).unwrap();
+    s.type_text("Hi [[my_name").unwrap();
+    let before = s.doc().unwrap().history.undo.len();
+    s.key("Enter", Mods::default()).unwrap();
+    let body = s.doc().unwrap().current_slide().unwrap().shapes[0].text.clone().unwrap();
+    assert_eq!(body.paragraphs.len(), 1, "no new paragraph was started");
+    let run = body.paragraphs[0].runs.last().cloned().unwrap();
+    assert_eq!(run.text, "[[AD_HOC:my_name]]");
+    assert!(matches!(run.kind, RunKind::Token { .. }), "{run:?}");
+    assert_eq!(body.text(), "Hi [[AD_HOC:my_name]]", "the typed \"[[my_name\" was replaced, not kept alongside the token");
+    assert_eq!(s.doc().unwrap().history.undo.len(), before + 1, "one undo step, same as text.insertVariable directly");
+}
+
+/// Enter with nothing typed after `[[` yet (or no `[[` at all) still starts a new paragraph —
+/// composing only intercepts Enter once there's an actual name to confirm.
+#[test]
+fn enter_starts_a_new_paragraph_when_nothing_is_being_composed() {
+    use crate::tools::Mods;
+    let mut s = session();
+    let title = s.doc().unwrap().current_slide().unwrap().shapes[0].id.0;
+    s.execute("text.edit", &json!({"id": title})).unwrap();
+    s.type_text("Hi [[").unwrap();
+    s.key("Enter", Mods::default()).unwrap();
+    let body = s.doc().unwrap().current_slide().unwrap().shapes[0].text.clone().unwrap();
+    assert_eq!(body.paragraphs.len(), 2, "an empty [[ doesn't block a normal Enter");
+    assert_eq!(body.paragraphs[0].text(), "Hi [[");
+}
+
+#[test]
 fn paragraph_commands_clamp_a_hostile_text_selection() {
     let mut s = session();
     let title = s.doc().unwrap().current_slide().unwrap().shapes[0].id.0;
@@ -5072,6 +5163,37 @@ fn table_column_width_of_a_huge_column_is_ignored() {
     }
 }
 
+#[test]
+fn insert_dynamic_table_makes_a_header_row_and_a_token_row_and_lists_as_one_table() {
+    use deckcraft_model::text::RunKind;
+    let mut s = session();
+    let id = s.execute("livedoc.insertDynamicTable", &json!({"name": "zzzz", "columns": ["aaa", "bbb"]})).unwrap()["id"].clone();
+    let t = table_of(&s, serde_json::from_value(id).unwrap());
+    assert_eq!((t.n_rows(), t.n_cols()), (2, 2));
+    assert_eq!(t.cell(0, 0).unwrap().text.text(), "aaa", "the header row is plain text");
+    let run = &t.cell(1, 1).unwrap().text.paragraphs[0].runs[0];
+    assert_eq!(run.text, "[[AD_HOC:zzzz.bbb]]");
+    assert!(matches!(run.kind, RunKind::Token { .. }), "{run:?}");
+    // One table in the inventory, not two scalars.
+    let v = s.execute("livedoc.variables", &json!({})).unwrap();
+    assert_eq!(v["tables"], json!([{"name": "zzzz", "columns": ["aaa", "bbb"]}]));
+    assert_eq!(v["scalars"], json!([]));
+}
+
+#[test]
+fn insert_dynamic_table_rejects_bad_names() {
+    let mut s = session();
+    for p in [
+        json!({"name": "", "columns": ["a"]}),
+        json!({"name": "a.b", "columns": ["a"]}),
+        json!({"name": "t", "columns": []}),
+        json!({"name": "t", "columns": ["a", "a"]}),
+        json!({"name": "t", "columns": ["x]"]}),
+    ] {
+        assert!(s.execute("livedoc.insertDynamicTable", &p).is_err(), "{p}");
+    }
+}
+
 /// Slides imported from an outline join the section of the slide they follow, like `slide.new`.
 #[test]
 fn slides_from_outline_join_the_section_of_the_slide_they_follow() {
@@ -5088,6 +5210,56 @@ fn slides_from_outline_join_the_section_of_the_slide_they_follow() {
         let slides: Vec<_> = doc.slides.iter().map(|x| x.id).collect();
         assert_eq!(order, slides, "markdown={markdown}: sections follow the slide order");
     }
+}
+
+#[test]
+fn an_image_variable_is_set_listed_and_cleared_on_a_selected_picture_only() {
+    const PNG: &[u8] = &[
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+        0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf,
+        0xc0, 0xf0, 0x1f, 0x00, 0x05, 0x00, 0x01, 0xff, 0x89, 0x99, 0x3d, 0x1d, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60,
+        0x82,
+    ];
+    let mut s = session();
+    // A text shape is refused.
+    let title = s.doc().unwrap().current_slide().unwrap().shapes[0].id.0;
+    assert!(s.execute("livedoc.setImageVariable", &json!({"name": "logo", "id": title})).is_err());
+
+    s.execute("insert.picture", &json!({"data": cmd::base64_encode(PNG), "name": "a.png"})).unwrap();
+    s.execute("livedoc.setImageVariable", &json!({"name": "logo"})).unwrap();
+    assert_eq!(s.execute("livedoc.variables", &json!({})).unwrap()["images"], json!(["logo"]));
+    s.execute("livedoc.clearImageVariable", &json!({})).unwrap();
+    assert_eq!(s.execute("livedoc.variables", &json!({})).unwrap()["images"], json!([]));
+}
+
+#[test]
+fn usage_lists_the_slides_each_variable_is_on_and_apply_to_all_fills_the_rest() {
+    let mut s = session();
+    s.execute("slide.new", &json!({})).unwrap();
+    s.execute("slide.new", &json!({})).unwrap();
+    s.execute("slide.go", &json!({"index": 1})).unwrap();
+    s.execute("insert.textBox", &json!({"rect": [100, 100, 300, 40]})).unwrap();
+    s.execute("text.insertVariable", &json!({"name": "client"})).unwrap();
+    s.execute("text.exit", &json!({})).unwrap();
+    let u = s.execute("livedoc.usage", &json!({})).unwrap();
+    assert_eq!(u, json!([{"kind": "text", "name": "client", "slides": [1]}]));
+
+    let r = s.execute("livedoc.applyToAllSlides", &json!({"name": "client", "kind": "text"})).unwrap();
+    assert_eq!(r["added"], json!(2), "the two slides that lacked it");
+    let u = s.execute("livedoc.usage", &json!({})).unwrap();
+    assert_eq!(u[0]["slides"], json!([0, 1, 2]), "{u}");
+    // Applying again changes nothing.
+    assert_eq!(s.execute("livedoc.applyToAllSlides", &json!({"name": "client", "kind": "text"})).unwrap()["added"], json!(0));
+    // One undo takes back the whole fill.
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.execute("livedoc.usage", &json!({})).unwrap(), json!([{"kind": "text", "name": "client", "slides": [1]}]));
+}
+
+#[test]
+fn apply_to_all_rejects_an_unknown_variable_and_a_bad_kind() {
+    let mut s = session();
+    assert!(s.execute("livedoc.applyToAllSlides", &json!({"name": "nope", "kind": "text"})).is_err());
+    assert!(s.execute("livedoc.applyToAllSlides", &json!({"name": "nope", "kind": "table"})).is_err());
 }
 
 #[test]

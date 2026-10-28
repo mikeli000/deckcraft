@@ -70,6 +70,22 @@ impl Session {
             let r = self.execute(id, &params)?;
             return Ok(json!({"handled": true, "command": id, "result": r}));
         }
+        // Enter confirms a Seismic LiveDocs variable being typed (`[[name`) instead of starting a
+        // new paragraph — the same "pick or create" gesture the popup's click confirms (see
+        // `deckcraft_livedoc::detect_composition`'s own doc comment).
+        if editing
+            && !mods.cmd
+            && !mods.shift
+            && matches!(k, "enter" | "return")
+            && let Some(st) = self.active()
+            && let Some(t) = st.selection.text.clone()
+            && let Some((start, partial)) = crate::cmd::text::livedoc_composing(st, &t)
+            && !partial.trim().is_empty()
+        {
+            self.execute("text.select", &json!({"anchor": [start.0, start.1], "caret": [t.caret.0, t.caret.1]}))?;
+            let r = self.execute("text.insertVariable", &json!({"name": partial.trim()}))?;
+            return Ok(json!({"handled": true, "command": "text.insertVariable", "result": r}));
+        }
         if editing && !mods.cmd {
             let r = match k {
                 "enter" | "return" => Some(self.execute("text.insert", &json!({"text": if mods.shift { "\u{b}" } else { "\n" }}))),

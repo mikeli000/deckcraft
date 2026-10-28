@@ -57,6 +57,10 @@ pub const TABLE: &[(&str, Class)] = &[
     ("render", Class::Layer(3)),
     ("pptx", Class::Layer(3)),
     ("pdf", Class::Layer(4)),
+    // Seismic LiveDocs interop (recognizes/creates `RunKind::Token` variables, exports LiveDocs
+    // custom-XML, uploads to a tenant's Content Library) — depends on `pptx`, so it can't sit
+    // below it.
+    ("livedoc", Class::Layer(4)),
     ("engine", Class::Layer(5)),
     ("ui-egui", Class::Layer(6)),
     ("mcp", Class::Layer(6)),
@@ -65,6 +69,9 @@ pub const TABLE: &[(&str, Class)] = &[
     ("deckcraft", Class::Exempt),
     ("cli", Class::Exempt),
     ("web", Class::Exempt),
+    // Upload Live's credential-holding proxy (apps/deckcraft-server) — stateless, no document of
+    // its own, but still an app (not a layered library), same as the three above.
+    ("server", Class::Exempt),
     ("xtask", Class::Exempt),
 ];
 
@@ -325,7 +332,7 @@ mod tests {
 
     #[test]
     fn apps_and_xtask_exempt() {
-        for app in ["deckcraft", "deckcraft-cli", "deckcraft-web", "xtask"] {
+        for app in ["deckcraft", "deckcraft-cli", "deckcraft-web", "deckcraft-server", "xtask"] {
             assert!(check(&[c(app, &[("egui", Normal, false), ("deckcraft-ui-egui", Normal, true)])]).is_empty());
         }
     }

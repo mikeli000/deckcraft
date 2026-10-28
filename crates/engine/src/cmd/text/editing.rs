@@ -192,6 +192,38 @@ pub(crate) fn insert_field(s: &mut Session, field: &str, text: &str) -> Result<V
     ok()
 }
 
+/// `text.insertVariable`: a Seismic LiveDocs AD_HOC variable (see `deckcraft_livedoc`'s own doc
+/// comment) as an atomic token, same insertion shape as [`insert_field`].
+pub(super) fn insert_variable(s: &mut Session, p: &Value) -> Result<Value> {
+    let name = str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad("text.insertVariable", "missing `name`"))?;
+    if name.len() > 256 || name.chars().any(|c| c.is_control() || c == ']') {
+        return Err(bad("text.insertVariable", "not a variable name"));
+    }
+    let text = deckcraft_livedoc::display_text(name);
+    let data = deckcraft_livedoc::token_data(name);
+    edit_text(s, move |body, t| {
+        let (a, b) = t.ordered();
+        let at = ed::delete(body, a, b);
+        let props = ed::props_at(body, at);
+        let src = TextBody {
+            paragraphs: vec![deckcraft_model::text::Paragraph {
+                runs: vec![Run { text: text.clone(), props, kind: RunKind::Token { data: data.clone() } }],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let c = ed::insert_body(body, at, &src);
+        t.anchor = c;
+        t.caret = c;
+    })?;
+    ok()
+}
+
+/// `text.listVariables`: every distinct LiveDocs variable name in the presentation.
+pub(super) fn list_variables(s: &mut Session, _: &Value) -> Result<Value> {
+    Ok(json!({"names": deckcraft_livedoc::list_variables(&s.doc()?.doc)}))
+}
+
 #[cfg(test)]
 mod rtl_promote_tests {
     use deckcraft_model::text::{Align, Paragraph, Run};
